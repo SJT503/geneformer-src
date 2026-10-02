@@ -478,7 +478,7 @@ def train_distributed(trainer_class, config, train_loader, val_loader, train_cel
         model_path = os.path.join(model_save_directory, "pytorch_model.bin")
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         model = create_model(config, num_labels_list, device)
-        model.load_state_dict(torch.load(model_path))
+        model.load_state_dict(torch.load(model_path), strict=False)  # vendored patch
         return 0.0, model
     
     return None

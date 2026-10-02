@@ -78,7 +78,7 @@ def load_and_evaluate_test_model(config):
         use_task_weights=config["use_task_weights"],
         task_weights=normalized_task_weights,
     )
-    best_model.load_state_dict(torch.load(best_model_path))
+    best_model.load_state_dict(torch.load(best_model_path), strict=False)  # vendored patch: saved dict carries attention_pool key
     best_model.to(device)
 
     evaluate_test_dataset(best_model, device, test_loader, cell_id_mapping, config)
