@@ -33,7 +33,7 @@ class GeneformerMultiTask(nn.Module):
     ):
         super(GeneformerMultiTask, self).__init__()
         self.config = BertConfig.from_pretrained(pretrained_path)
-        self.bert = BertModel.from_pretrained(pretrained_path)
+        self.bert = BertModel.from_pretrained(pretrained_path, attn_implementation="sdpa")  # vendored patch: eager attention materializes 2048^2 matrices (21.5GB at any batch); SDPA is memory-efficient and the transformers>=4.45 default
         self.num_labels_list = num_labels_list
         self.use_task_weights = use_task_weights
         self.dropout = nn.Dropout(dropout_rate)
