@@ -1,4 +1,8 @@
 # ruff: noqa: F401
+# VENDORED 2026-10-02 (SJT503): guarded per-module imports for constrained runtimes (Kaggle).
+# Upstream __init__ eagerly imports all submodules, dragging anndata/loompy/scanpy/bitsandbytes
+# whose pip resolution breaks precompiled numpy/scipy ABIs on Kaggle images. Missing modules are
+# skipped with a warning; import the specific submodule you need instead.
 import warnings
 from pathlib import Path
 
@@ -14,26 +18,24 @@ TOKEN_DICTIONARY_FILE_30M = Path(__file__).parent / "gene_dictionaries_30m/token
 ENSEMBL_DICTIONARY_FILE_30M = Path(__file__).parent / "gene_dictionaries_30m/gene_name_id_dict_gc30M.pkl"
 ENSEMBL_MAPPING_FILE_30M = Path(__file__).parent / "gene_dictionaries_30m/ensembl_mapping_dict_gc30M.pkl"
 
-from . import (
-    collator_for_classification,
-    emb_extractor,
-    in_silico_perturber,
-    in_silico_perturber_stats,
-    pretrainer,
-    tokenizer,
-)
-from .collator_for_classification import (
-    DataCollatorForCellClassification,
-    DataCollatorForGeneClassification,
-)
-from .emb_extractor import EmbExtractor, get_embs
-from .in_silico_perturber import InSilicoPerturber
-from .in_silico_perturber_stats import InSilicoPerturberStats
-from .pretrainer import GeneformerPretrainer
-from .tokenizer import TranscriptomeTokenizer
 
-from . import classifier  # noqa # isort:skip
-from .classifier import Classifier  # noqa # isort:skip
+def _guard(mod_name, names):
+    try:
+        m = __import__(f"geneformer.{mod_name}", fromlist=list(names))
+        globals()[mod_name] = m
+        for n in names:
+            globals()[n] = getattr(m, n)
+        return True
+    except Exception as e:  # noqa: BLE001 — vendored guard for optional heavy deps
+        warnings.warn(f"[geneformer-vendored] submodule '{mod_name}' not loaded: {e}")
+        return False
 
-from . import mtl_classifier  # noqa # isort:skip
-from .mtl_classifier import MTLClassifier  # noqa # isort:skip
+
+_guard("collator_for_classification", ["DataCollatorForCellClassification", "DataCollatorForGeneClassification"])
+_guard("emb_extractor", ["EmbExtractor", "get_embs"])
+_guard("in_silico_perturber", ["InSilicoPerturber"])
+_guard("in_silico_perturber_stats", ["InSilicoPerturberStats"])
+_guard("pretrainer", ["GeneformerPretrainer"])
+_guard("tokenizer", ["TranscriptomeTokenizer"])
+_guard("classifier", ["Classifier"])
+_guard("mtl_classifier", ["MTLClassifier"])
