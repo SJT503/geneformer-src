@@ -89,7 +89,25 @@ class Trainer:
         num_batches = 0
         accumulated_loss = 0.0
         
+        # vendored patch: resume from checkpoint if present (same seed => same shuffle order => skip is valid)
+        import os as _os
+        _start_batch = 0
+        if _os.path.exists("/root/autodl-tmp/ckpt.pt") and self.is_main_process:
+            try:
+                import os as _os2
+                _ck = torch.load("/root/autodl-tmp/ckpt.pt", map_location=self.device)
+                if _ck.get("epoch") == epoch:
+                    self.model.load_state_dict(_ck["model"], strict=False)
+                    self.optimizer.load_state_dict(_ck["optimizer"])
+                    self.scheduler.load_state_dict(_ck["scheduler"])
+                    _start_batch = _ck["batch_idx"]
+                    print(f"[ckpt] resumed epoch {epoch} from batch {_start_batch}", flush=True)
+            except Exception as _e:
+                print(f"[ckpt] resume failed ({_e}); training from scratch", flush=True)
+
         for batch_idx, batch in enumerate(iterator):
+            if batch_idx < _start_batch:
+                continue
             batch_start = time.time()
             
             input_ids = batch["input_ids"].to(self.device)
@@ -99,7 +117,8 @@ class Trainer:
             ]
 
             forward_start = time.time()
-            loss, _, _ = self.model(input_ids, attention_mask, labels)
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    loss, _, _ = self.model(input_ids, attention_mask, labels)
             
             # Scale loss by accumulation steps for gradient accumulation
             if accumulation_steps > 1:
@@ -126,7 +145,8 @@ class Trainer:
                     loss.backward()
             else:
                 # Non-distributed training or accumulation_steps=1
-                loss.backward()
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    loss.backward()
             
             backward_end = time.time()
             backward_times.append(backward_end - backward_start)
@@ -152,6 +172,14 @@ class Trainer:
                     
                     # Update progress bar with just the running average loss
                     progress_bar.set_postfix({"loss": f"{avg_loss:.4f}"})
+
+                # vendored patch: periodic checkpoint (atomic write) for resume-after-kill
+                if (batch_idx + 1) % 1500 == 0:
+                    import os as _os
+                    _ck = {"model": self.model.state_dict(), "optimizer": self.optimizer.state_dict(),
+                           "scheduler": self.scheduler.state_dict(), "batch_idx": batch_idx + 1, "epoch": epoch}
+                    torch.save(_ck, "/root/autodl-tmp/ckpt.pt.tmp")
+                    _os.replace("/root/autodl-tmp/ckpt.pt.tmp", "/root/autodl-tmp/ckpt.pt")
                 
                 accumulated_loss = 0.0
             else:
